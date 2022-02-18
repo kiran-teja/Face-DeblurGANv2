@@ -1,0 +1,89 @@
+*******************************************************************
+
+FPNHead (num_in,num_mid,num_out,x):
+
+-> 2 Relu(conv(x))
+-> No change in dimensions
+-> channels: num_in -> num_out
+
+********************************************************************
+
+FPN (n_feats, norm_type, x):
+
+td1, td2, td3 -> conv+norm+relu
+
+x -> (128 128 128)
+toRGB -> (3 128 128)
+
+########## inception-resnetV2  ##########
+
+enc0 -> (32 63 63)
+enc1 -> (64 30 30)
+enc2 -> (192 13 13)
+enc3 -> (1088 6 6)
+enc4 -> (2080 2 2)
+
+##########################################
+
+
+lat4 -> ReflectPad(1) -> ((2080 -> 128 2 -> 4, 2-> 4)
+lat3 -> ReflectPad(1) -> (1080 -> 128 6->8 6->8)
+lat2 ->                  (192 -> 128 13 13)
+lat1 -> ReflectPad(1) -> (64 -> 128 30->32 30->32)
+lat0 ->                  (32 -> 128 63 63)
+
+map4 -> lat4                                -> (128 4 4)
+map3 -> td1(lat3 + up(map4))                -> (128 8 8)
+map2 -> td2(pad(lat2,(1,2,1,2)) + up(map3)) -> (128 16 16)
+map1 -> td3( lat1 + up(map2))               -> (128 32 32)
+map0 -> pad(lat0, (0,1,0,1))                -> (128 64 64)
+
+
+Return map0,map1,map2,map3,map4
+
+
+********************************************************************
+
+
+FPNInception (n_feats, norm_type, x):
+
+##### INIT ############
+
+fpn -> FPN(n_feats, norm_type)
+
+head1, head2, head3, head4 -> FPNHead(n_feats, n_feats, n_feats)
+
+smooth -> conv(4*n_feats -> n_feats) + norm + Relu
+
+smooth2 -> conv(n_feats -> n_feats/2) + norm + Relu
+
+final -> conv(n_feats/2 -> 3)
+final2 -> conv( 3 -> n_feats)
+
+
+############ Forward #########
+
+map0, map1, map2, map3, map4 <-  fpn(x)  -> 64 32 16 8 4
+
+map4 -> up(hea4(map4),8)  -> (128 32 32)
+map3 -> up(head3(map3),4) -> (128 32 32)
+map2 -> up(head2(map2),2) -> (128 32 32)
+map1 -> up(head1(map1),1) -> (128 32 32)
+
+int1 -> cat(map4,map3,map2,map1) -> (128*4 32 32)
+smoothed -> smooth(int1)         -> (128 32 32)
+
+smooted -> up(smooth,2)          -> (128 64 64)
+int1    -> map0 + smoothed       -> (128 64 64)
+
+smoothed -> smooth2(int1)        -> (64 64 64)
+smoothed -> up(smoothed)         -> (64 128 128)
+
+final -> final(smoothed)         -> (3 128 128)
+res -> final + x1(Ground_truth)  -> (3 128 128)
+res2 -> tanh(final2(res))        -> (128 128 128)
+
+
+return res2
+
+*************************************************************
